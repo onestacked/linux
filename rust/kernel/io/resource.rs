@@ -38,7 +38,7 @@ impl Resource {
     }
 
     /// Returns the start address of the resource.
-    pub fn start(&self) -> u64 {
+    pub fn start(&self) -> bindings::resource_size_t {
         let inner = self.0.get();
         // SAFETY: safe as per the invariants of `Resource`
         unsafe { *inner }.start

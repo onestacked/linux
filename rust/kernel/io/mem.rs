@@ -26,7 +26,7 @@ use crate::prelude::*;
 /// start of the I/O memory mapped region.
 pub struct IoMem<const SIZE: usize = 0, const EXCLUSIVE: bool = true> {
     io: IoRaw<SIZE>,
-    res_start: u64,
+    res_start: bindings::resource_size_t,
 }
 
 impl<const SIZE: usize, const EXCLUSIVE: bool> IoMem<SIZE, EXCLUSIVE> {
@@ -80,7 +80,12 @@ impl<const SIZE: usize, const EXCLUSIVE: bool> Drop for IoMem<SIZE, EXCLUSIVE> {
         if EXCLUSIVE {
             // SAFETY: `res_start` and `io.maxsize()` were the values passed to
             // `request_mem_region`.
-            unsafe { bindings::release_mem_region(self.res_start, self.io.maxsize() as u64) }
+            unsafe {
+                bindings::release_mem_region(
+                    self.res_start,
+                    self.io.maxsize() as bindings::resource_size_t,
+                )
+            }
         }
 
         // SAFETY: Safe as by the invariant of `Io`.
