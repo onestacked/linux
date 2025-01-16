@@ -632,6 +632,20 @@ config MCHP_LAN966X_PCI
 	    - lan966x-miim (MDIO_MSCC_MIIM)
 	    - lan966x-switch (LAN966X_SWITCH)
 
+config LEDPWM
+	tristate "DE1-SoC-Computer Led PWM support"
+	help
+	  This driver provides very basic support for controlling the LED PWM of the De1Soc.
+	  This currently only outputs an changing pattern on the LEDs.
+
+	  After loading the first 8 LEDs are turned on fully, after 3 seconds the pattern logic starts.
+	  The generated pattern decreases the brightness of every LED, sets one LED to full brightess and waits for 100ms.
+	  The LED that is set to full brightness rotates arround between the first 8 LEDs.
+
+	  This driver also provides a device file with which LED 8 can be controlled, valid values are one byte in the range from 0 to 100.
+	  When multiple bytes are written, each value is displayed for 200 ms each;
+
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
