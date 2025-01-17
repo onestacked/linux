@@ -6,7 +6,7 @@
 #include "ice.h"
 #include "ice_lib.h"
 #include "devlink.h"
-#include "devlink_port.h"
+#include "port.h"
 #include "ice_eswitch.h"
 #include "ice_fw_update.h"
 #include "ice_dcb_lib.h"
@@ -1207,9 +1207,15 @@ static int ice_devlink_reinit_up(struct ice_pf *pf)
 	struct ice_vsi *vsi = ice_get_main_vsi(pf);
 	int err;
 
+	err = ice_init_hw(&pf->hw);
+	if (err) {
+		dev_err(ice_pf_to_dev(pf), "ice_init_hw failed: %d\n", err);
+		return err;
+	}
+
 	err = ice_init_dev(pf);
 	if (err)
-		return err;
+		goto unroll_hw_init;
 
 	vsi->flags = ICE_VSI_FLAG_INIT;
 
@@ -1232,6 +1238,8 @@ err_load:
 	rtnl_unlock();
 err_vsi_cfg:
 	ice_deinit_dev(pf);
+unroll_hw_init:
+	ice_deinit_hw(&pf->hw);
 	return err;
 }
 
