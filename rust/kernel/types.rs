@@ -567,6 +567,25 @@ pub enum Either<L, R> {
 /// several threads in parallel.
 pub type NotThreadSafe = PhantomData<*mut ()>;
 
+/// Docs TODO
+pub struct Aliased<T> {
+    value: UnsafeCell<T>,
+    _pin: PhantomPinned,
+}
+impl<T> Aliased<T> {
+    /// Creates a new aliased value.
+    pub fn new(value: T) -> Self {
+        Self {
+            value: UnsafeCell::new(value),
+            _pin: PhantomPinned,
+        }
+    }
+    /// Returns a raw pointer to the aliased data.
+    pub const fn get(&self) -> *mut T {
+        UnsafeCell::get(&self.value)
+    }
+}
+
 /// Used to construct instances of type [`NotThreadSafe`] similar to how `PhantomData` is
 /// constructed.
 ///

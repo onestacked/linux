@@ -12,6 +12,7 @@ use kernel::{
     miscdevice::{MiscDevice, MiscDeviceOptions, MiscDeviceRegistration},
     of, platform,
     prelude::*,
+    sync::Arc,
     types::ARef,
 };
 
@@ -28,7 +29,7 @@ static NUM: AtomicU8 = AtomicU8::new(0);
 #[pin_data(PinnedDrop)]
 struct LedPwmDriver {
     pdev: platform::Device,
-    mapping: Devres<IoMem<MAPPING_SIZE, true>>,
+    mapping: Arc<Devres<IoMem<MAPPING_SIZE, true>>>,
     #[pin]
     miscdev: MiscDeviceRegistration<RustMiscDevice>,
 }
@@ -69,7 +70,7 @@ impl platform::Driver for LedPwmDriver {
         let drvdata = KBox::try_pin_init(
             try_pin_init!(Self {
                 pdev: pdev.clone(),
-                mapping,
+                mapping: Arc::new(mapping, GFP_KERNEL)?,
                 miscdev <- MiscDeviceRegistration::register(options),
             }),
             GFP_KERNEL,
@@ -82,7 +83,7 @@ impl platform::Driver for LedPwmDriver {
 #[pin_data(PinnedDrop)]
 struct RustMiscDevice {
     dev: ARef<Device>,
-    mapping: &'static Devres<IoMem<MAPPING_SIZE, true>>,
+    mapping: Arc<Devres<IoMem<MAPPING_SIZE, true>>>,
 }
 
 #[vtable]
@@ -104,7 +105,7 @@ impl MiscDevice for RustMiscDevice {
             try_pin_init! {
                 RustMiscDevice {
                     dev: dev,
-                    mapping: &ledpwm.mapping
+                    mapping: ledpwm.mapping.clone()
                 }
             },
             GFP_KERNEL,

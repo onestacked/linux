@@ -294,6 +294,29 @@ impl Device {
         // returned by `platform_get_resource`.
         Some(unsafe { Resource::from_ptr(resource) })
     }
+
+    /// Returns the irq at `index`, if any.
+    pub fn get_irq(&self, index: u32) -> Option<ffi::c_uint> {
+        // SAFETY: `self.as_raw()` returns a valid pointer to a `struct platform_device`.
+        let irq = unsafe { bindings::platform_get_irq(self.as_raw(), index) };
+
+        if irq == 0 {
+            return None;
+        }
+
+        Some(irq as ffi::c_uint)
+    }
+    /// Returns the irq with a given `name`, if any.
+    pub fn get_irq_by_name(&self, name: &CStr) -> Option<ffi::c_int> {
+        // SAFETY: `self.as_raw()` returns a valid pointer to a `struct platform_device`.
+        let irq = unsafe { bindings::platform_get_irq_byname(self.as_raw(), name.as_char_ptr()) };
+
+        if irq == 0 {
+            return None;
+        }
+
+        Some(irq)
+    }
 }
 
 impl AsRef<device::Device> for Device {
