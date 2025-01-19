@@ -45,24 +45,28 @@ impl MiscDeviceOptions {
 /// # Invariants
 ///
 /// `inner` is a registered misc device.
-#[repr(transparent)]
+#[repr(C)]
 #[pin_data(PinnedDrop)]
-pub struct MiscDeviceRegistration<T> {
+pub struct MiscDeviceRegistration<T: MiscDevice> {
     #[pin]
     inner: Opaque<bindings::miscdevice>,
+    data: T::RegistrationData,
     _t: PhantomData<T>,
 }
 
 // SAFETY: It is allowed to call `misc_deregister` on a different thread from where you called
 // `misc_register`.
-unsafe impl<T> Send for MiscDeviceRegistration<T> {}
+unsafe impl<T: MiscDevice> Send for MiscDeviceRegistration<T> {}
 // SAFETY: All `&self` methods on this type are written to ensure that it is safe to call them in
 // parallel.
-unsafe impl<T> Sync for MiscDeviceRegistration<T> {}
+unsafe impl<T: MiscDevice> Sync for MiscDeviceRegistration<T> {}
 
 impl<T: MiscDevice> MiscDeviceRegistration<T> {
     /// Register a misc device.
-    pub fn register(opts: MiscDeviceOptions) -> impl PinInit<Self, Error> {
+    pub fn register(
+        opts: MiscDeviceOptions,
+        data: T::RegistrationData,
+    ) -> impl PinInit<Self, Error> {
         try_pin_init!(Self {
             inner <- Opaque::try_ffi_init(move |slot: *mut bindings::miscdevice| {
                 // SAFETY: The initializer can write to the provided `slot`.
@@ -75,6 +79,7 @@ impl<T: MiscDevice> MiscDeviceRegistration<T> {
                 // misc device.
                 to_result(unsafe { bindings::misc_register(slot) })
             }),
+            data,
             _t: PhantomData,
         })
     }
@@ -93,10 +98,15 @@ impl<T: MiscDevice> MiscDeviceRegistration<T> {
         // before the underlying `struct miscdevice` is destroyed.
         unsafe { Device::as_ref((*self.as_raw()).this_device) }
     }
+
+    /// Access the additional data stored in this registration.
+    pub fn data(&self) -> &T::RegistrationData {
+        &self.data
+    }
 }
 
 #[pinned_drop]
-impl<T> PinnedDrop for MiscDeviceRegistration<T> {
+impl<T: MiscDevice> PinnedDrop for MiscDeviceRegistration<T> {
     fn drop(self: Pin<&mut Self>) {
         // SAFETY: We know that the device is registered by the type invariants.
         unsafe { bindings::misc_deregister(self.inner.get()) };
@@ -108,6 +118,9 @@ impl<T> PinnedDrop for MiscDeviceRegistration<T> {
 pub trait MiscDevice: Sized {
     /// What kind of pointer should `Self` be wrapped in.
     type Ptr: ForeignOwnable + Send + Sync;
+
+    /// The additional Data carried by the `MiscDeviceRegistration` for this `MiscDevice`
+    type RegistrationData: Send + Sync;
 
     /// Called when the misc device is opened.
     ///

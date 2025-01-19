@@ -4,7 +4,7 @@
 
 use core::sync::atomic::{AtomicU8, Ordering};
 use kernel::{
-    c_str, container_of,
+    c_str,
     device::Device,
     devres::Devres,
     fs::File,
@@ -29,9 +29,9 @@ static NUM: AtomicU8 = AtomicU8::new(0);
 #[pin_data(PinnedDrop)]
 struct LedPwmDriver {
     pdev: platform::Device,
-    mapping: Arc<Devres<IoMem<MAPPING_SIZE, true>>>,
     #[pin]
     miscdev: MiscDeviceRegistration<RustMiscDevice>,
+    mapping: Arc<Devres<IoMem<MAPPING_SIZE, true>>>,
 }
 
 impl platform::Driver for LedPwmDriver {
@@ -48,6 +48,7 @@ impl platform::Driver for LedPwmDriver {
         let mapping = pdev
             .ioremap_resource_sized::<MAPPING_SIZE, true>(pdev.resource(0).ok_or(ENXIO)?)
             .map_err(|_| ENXIO)?;
+        let mapping = Arc::new(mapping, GFP_KERNEL)?;
 
         // Enable the LEDs on driver load
         mapping.try_access().ok_or(ENXIO)?.writel(0xFF, 0x0);
@@ -70,8 +71,8 @@ impl platform::Driver for LedPwmDriver {
         let drvdata = KBox::try_pin_init(
             try_pin_init!(Self {
                 pdev: pdev.clone(),
-                mapping: Arc::new(mapping, GFP_KERNEL)?,
-                miscdev <- MiscDeviceRegistration::register(options),
+                mapping: mapping.clone(),
+                miscdev <- MiscDeviceRegistration::register(options, mapping),
             }),
             GFP_KERNEL,
         )?;
@@ -90,22 +91,23 @@ struct RustMiscDevice {
 impl MiscDevice for RustMiscDevice {
     type Ptr = Pin<KBox<Self>>;
 
+    type RegistrationData = Arc<Devres<IoMem<MAPPING_SIZE, true>>>;
+
     fn open(_file: &File, misc: &MiscDeviceRegistration<Self>) -> Result<Pin<KBox<Self>>> {
         let dev = ARef::from(misc.device());
-        // SAFETY:
-        // Stuff?
-        let ledpwm = unsafe { &*container_of!(misc, LedPwmDriver, miscdev) };
+
+        let mapping = misc.data();
 
         dev_info!(dev, "Opening Rust Misc Device Sample\n");
 
-        let res = ledpwm.mapping.try_access().ok_or(ENXIO)?;
+        let res = mapping.try_access().ok_or(ENXIO)?;
         res.writel(0x80, 0x0);
 
         KBox::try_pin_init(
             try_pin_init! {
                 RustMiscDevice {
                     dev: dev,
-                    mapping: ledpwm.mapping.clone()
+                    mapping: mapping.clone()
                 }
             },
             GFP_KERNEL,
