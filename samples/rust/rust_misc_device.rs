@@ -172,6 +172,45 @@ impl MiscDevice for RustMiscDevice {
         )
     }
 
+    fn read(
+        me: Pin<&RustMiscDevice>,
+        _file: &File,
+        writer: &mut UserSliceWriter,
+        offset: u64,
+    ) -> Result<usize> {
+        dev_info!(me.dev, "Reading Rust Misc Device Sample\n");
+
+        let data = b"Hello World\n";
+        if let Some((_, mut data)) = data.split_at_checked(offset as usize) {
+            if data.len() > writer.len() {
+                data = &data[..writer.len()];
+            }
+            writer.write_slice(data)?;
+            Ok(data.len())
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn write(
+        me: Pin<&RustMiscDevice>,
+        _file: &File,
+        reader: &mut UserSliceReader,
+        _offset: u64,
+    ) -> Result<usize> {
+        dev_info!(me.dev, "Writing Rust Misc Device Sample\n");
+        let mut buffer = [0; 10];
+        let mut buffer = &mut buffer[..];
+        if buffer.len() > reader.len() {
+            buffer = &mut buffer[..reader.len()];
+        }
+
+        reader.read_slice(buffer)?;
+
+        dev_info!(me.dev, "Wrote {:?}", buffer);
+        Ok(buffer.len())
+    }
+
     fn ioctl(me: Pin<&RustMiscDevice>, _file: &File, cmd: u32, arg: usize) -> Result<isize> {
         dev_info!(me.dev, "IOCTLing Rust Misc Device Sample\n");
 
