@@ -17,6 +17,7 @@ use crate::{
     seq_file::SeqFile,
     str::CStr,
     types::{ForeignOwnable, Opaque},
+    uaccess::{UserPtr, UserSlice, UserSliceReader, UserSliceWriter},
 };
 use core::{
     ffi::{c_int, c_long, c_uint, c_ulong},
@@ -123,6 +124,30 @@ pub trait MiscDevice: Sized {
         drop(device);
     }
 
+    /// Reads data from this file to the caller's buffer.
+    ///
+    /// Corresponds to the `read` function pointer in `struct file_operations`.
+    fn read(
+        _device: <Self::Ptr as ForeignOwnable>::Borrowed<'_>,
+        _file: &File,
+        _writer: &mut UserSliceWriter,
+        _offset: u64,
+    ) -> Result<usize> {
+        kernel::build_error!(VTABLE_DEFAULT_ERROR)
+    }
+
+    /// Writes data from the caller's buffer to this file.
+    ///
+    /// Corresponds to the `write` function pointer in `struct file_operations`.
+    fn write(
+        _device: <Self::Ptr as ForeignOwnable>::Borrowed<'_>,
+        _file: &File,
+        _reader: &mut UserSliceReader,
+        _offset: u64,
+    ) -> Result<usize> {
+        kernel::build_error!(VTABLE_DEFAULT_ERROR)
+    }
+
     /// Handler for ioctls.
     ///
     /// The `cmd` argument is usually manipulated using the utilties in [`kernel::ioctl`].
@@ -180,6 +205,8 @@ const fn create_vtable<T: MiscDevice>() -> &'static bindings::file_operations {
         const VTABLE: bindings::file_operations = bindings::file_operations {
             open: Some(fops_open::<T>),
             release: Some(fops_release::<T>),
+            read: maybe_fn(T::HAS_READ, fops_read::<T>),
+            write: maybe_fn(T::HAS_READ, fops_write::<T>),
             unlocked_ioctl: maybe_fn(T::HAS_IOCTL, fops_ioctl::<T>),
             #[cfg(CONFIG_COMPAT)]
             compat_ioctl: if T::HAS_COMPAT_IOCTL {
@@ -331,4 +358,92 @@ unsafe extern "C" fn fops_show_fdinfo<T: MiscDevice>(
     let m = unsafe { SeqFile::from_raw(seq_file) };
 
     T::show_fdinfo(device, m, file);
+}
+
+/// # Safety
+///
+/// - `file` must be a valid file that is associated with a `MiscDeviceRegistration<T>`.
+/// - `buf` must point to a user buffer of at least len bytes that is writeable memory for the
+///   duration of this call
+/// - `offset` must point to valid, writeable memory for the duration of this call.
+unsafe extern "C" fn fops_read<T: MiscDevice>(
+    file: *mut bindings::file,
+    buf: *mut core::ffi::c_char,
+    len: usize,
+    offset: *mut bindings::loff_t,
+) -> isize {
+    // SAFETY: The release call of a file owns the private data.
+    let private = unsafe { (*file).private_data };
+    // SAFETY: Read calls can borrow the private data of the file.
+    let device = unsafe { <T::Ptr as ForeignOwnable>::borrow(private) };
+    // SAFETY:
+    // * The file is valid for the duration of this call.
+    // * There is no active fdget_pos region on the file on this thread.
+    let file = unsafe { File::from_raw_file(file) };
+
+    // SAFETY:
+    // * `buf` points to a user buffer of at least len bytes.
+    let mut data = UserSlice::new(buf as UserPtr, len).writer();
+
+    // SAFETY:
+    // * `offset` points to valid memory.
+    let Ok(initial_offset) = unsafe { offset.read() }.try_into() else {
+        return EINVAL.to_errno() as _;
+    };
+
+    // No `FMODE_UNSIGNED_OFFSET` support, so `offset` must be in [0, 2^63).
+    // See <https://github.com/fishinabarrel/linux-kernel-module-rust/pull/113>.
+    let read = T::read(device, file, &mut data, initial_offset);
+
+    match read {
+        Ok(ret) => {
+            // SAFETY:
+            // * `offset` points to valid memory, writable.
+            unsafe { (*offset) += bindings::loff_t::try_from(ret).unwrap() };
+            ret as isize
+        }
+
+        Err(err) => err.to_errno() as isize,
+    }
+}
+
+unsafe extern "C" fn fops_write<T: MiscDevice>(
+    file: *mut bindings::file,
+    buf: *const core::ffi::c_char,
+    len: usize,
+    offset: *mut bindings::loff_t,
+) -> isize {
+    // SAFETY: The release call of a file owns the private data.
+    let private = unsafe { (*file).private_data };
+    // SAFETY: Read calls can borrow the private data of the file.
+    let device = unsafe { <T::Ptr as ForeignOwnable>::borrow(private) };
+    // SAFETY:
+    // * The file is valid for the duration of this call.
+    // * There is no active fdget_pos region on the file on this thread.
+    let file = unsafe { File::from_raw_file(file) };
+
+    // SAFETY:
+    // * `buf` points to a user buffer of at least len bytes.
+    let mut data = unsafe { UserSlice::new(buf as UserPtr, len).reader() };
+
+    // SAFETY:
+    // * `offset` points to valid memory.
+    let Ok(initial_offset) = unsafe { offset.read() }.try_into() else {
+        return EINVAL.to_errno() as _;
+    };
+
+    // No `FMODE_UNSIGNED_OFFSET` support, so `offset` must be in [0, 2^63).
+    // See <https://github.com/fishinabarrel/linux-kernel-module-rust/pull/113>.
+    let write = (&T::write)(device, file, &mut data, initial_offset);
+
+    match write {
+        Ok(ret) => {
+            // SAFETY:
+            // * `offset` points to valid memory, writable.
+            unsafe { (*offset) += bindings::loff_t::try_from(ret).unwrap() };
+            ret as isize
+        }
+
+        Err(err) => err.to_errno() as isize,
+    }
 }
