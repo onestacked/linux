@@ -428,17 +428,7 @@ rust-analyzer:
 		> rust-project.json
 
 redirect-intrinsics = \
-	__addsf3 __eqsf2 __extendsfdf2 __gesf2 __lesf2 __ltsf2 __mulsf3 __nesf2 __truncdfsf2 __unordsf2 \
-	__adddf3 __eqdf2 __ledf2 __ltdf2 __muldf3 __unorddf2 \
-	__muloti4 __multi3 \
-	__udivmodti4 __udivti3 __umodti3
-
-ifneq ($(or $(CONFIG_ARM64),$(and $(CONFIG_RISCV),$(CONFIG_64BIT))),)
-	# These intrinsics are defined for ARM64 and RISCV64
-	redirect-intrinsics += \
-		__ashrti3 \
-		__ashlti3 __lshrti3
-endif
+        __udivti3
 
 ifdef CONFIG_MODVERSIONS
 cmd_gendwarfksyms = $(if $(skip_gendwarfksyms),, \
