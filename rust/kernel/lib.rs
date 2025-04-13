@@ -38,13 +38,14 @@ extern crate self as kernel;
 pub use ffi;
 
 pub mod alloc;
-#[cfg(CONFIG_BLOCK)]
+#[cfg(all(CONFIG_BLOCK, not(CONFIG_CPU_32v5)))]
 pub mod block;
 #[doc(hidden)]
 pub mod build_assert;
 pub mod cred;
 pub mod device;
 pub mod device_id;
+#[cfg(not(CONFIG_CPU_32v5))]
 pub mod devres;
 pub mod dma;
 pub mod driver;
@@ -59,19 +60,21 @@ pub mod ioctl;
 pub mod jump_label;
 #[cfg(CONFIG_KUNIT)]
 pub mod kunit;
+#[cfg(not(CONFIG_CPU_32v5))]
 pub mod list;
 pub mod miscdevice;
 #[cfg(CONFIG_NET)]
 pub mod net;
 pub mod of;
 pub mod page;
-#[cfg(CONFIG_PCI)]
+#[cfg(all(CONFIG_PCI, not(CONFIG_CPU_32v5)))]
 pub mod pci;
 pub mod pid_namespace;
 pub mod platform;
 pub mod prelude;
 pub mod print;
 pub mod rbtree;
+#[cfg(not(CONFIG_CPU_32v5))]
 pub mod revocable;
 pub mod security;
 pub mod seq_file;

@@ -444,6 +444,11 @@ ifdef CONFIG_ARM
 		__aeabi_fadd __aeabi_fmul __aeabi_fcmpeq __aeabi_fcmple __aeabi_fcmplt __aeabi_fcmpun \
 		__aeabi_dadd __aeabi_dmul __aeabi_dcmple __aeabi_dcmplt __aeabi_dcmpun \
 		__aeabi_uldivmod
+
+	ifdef CONFIG_CPU_32v5
+		redirect-intrinsics += \
+				__aeabi_memset __aeabi_memcpy __aeabi_memclr4 __aeabi_memclr8 __aeabi_memcpy4 __aeabi_memclr __aeabi_memset4
+	endif
 endif
 ifneq ($(or $(CONFIG_ARM64),$(and $(CONFIG_RISCV),$(CONFIG_64BIT))),)
 	# These intrinsics are defined for ARM64 and RISCV64
@@ -514,6 +519,7 @@ $(obj)/ffi.o: $(src)/ffi.rs $(obj)/compiler_builtins.o FORCE
 	+$(call if_changed_rule,rustc_library)
 
 $(obj)/bindings.o: private rustc_target_flags = --extern ffi
+$(obj)/bindings.o: private rustc_objcopy = $(foreach sym,$(redirect-intrinsics),--redefine-sym $(sym)=__rust$(sym))
 $(obj)/bindings.o: $(src)/bindings/lib.rs \
     $(obj)/ffi.o \
     $(obj)/bindings/bindings_generated.rs \
@@ -522,6 +528,7 @@ $(obj)/bindings.o: $(src)/bindings/lib.rs \
 
 $(obj)/uapi.o: private rustc_target_flags = --extern ffi
 $(obj)/uapi.o: private skip_gendwarfksyms = 1
+$(obj)/uapi.o: private rustc_objcopy = $(foreach sym,$(redirect-intrinsics),--redefine-sym $(sym)=__rust$(sym))
 $(obj)/uapi.o: $(src)/uapi/lib.rs \
     $(obj)/ffi.o \
     $(obj)/uapi/uapi_generated.rs FORCE
@@ -529,6 +536,7 @@ $(obj)/uapi.o: $(src)/uapi/lib.rs \
 
 $(obj)/kernel.o: private rustc_target_flags = --extern ffi --extern pin_init \
     --extern build_error --extern macros --extern bindings --extern uapi
+$(obj)/kernel.o: private rustc_objcopy = $(foreach sym,$(redirect-intrinsics),--redefine-sym $(sym)=__rust$(sym))
 $(obj)/kernel.o: $(src)/kernel/lib.rs $(obj)/build_error.o $(obj)/pin_init.o \
     $(obj)/$(libmacros_name) $(obj)/bindings.o $(obj)/uapi.o FORCE
 	+$(call if_changed_rule,rustc_library)

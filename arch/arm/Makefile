@@ -150,8 +150,12 @@ endif
 KBUILD_CPPFLAGS	+=$(cpp-y)
 KBUILD_CFLAGS	+=$(CFLAGS_ABI) $(CFLAGS_ISA) $(arch-y) $(tune-y) $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,)) -msoft-float -Uarm
 KBUILD_AFLAGS	+=$(CFLAGS_ABI) $(AFLAGS_ISA) -Wa,$(arch-y) $(tune-y) -include asm/unified.h -msoft-float
-KBUILD_RUSTFLAGS += --target=arm-unknown-linux-gnueabi
 
+ifeq ($(CONFIG_CPU_32v5),y)
+	KBUILD_RUSTFLAGS += --target=armv5te-none-eabi
+else
+	KBUILD_RUSTFLAGS += --target=arm-unknown-linux-gnueabi
+endif
 CHECKFLAGS	+= -D__arm__
 
 # Text offset. This list is sorted numerically by address in order to

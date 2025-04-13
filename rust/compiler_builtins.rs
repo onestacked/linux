@@ -97,5 +97,16 @@ define_panicking_intrinsics!("`u64` division/modulo should not be used", {
     __aeabi_uldivmod,
 });
 
+#[cfg(CONFIG_CPU_32v5)]
+define_panicking_intrinsics!("TODO", {
+    __aeabi_memset,
+    __aeabi_memcpy,
+    __aeabi_memclr4,
+    __aeabi_memclr8,
+    __aeabi_memcpy4,
+    __aeabi_memclr,
+    __aeabi_memset4,
+});
+
 // NOTE: if you are adding a new intrinsic here, you should also add it to
 // `redirect-intrinsics` in `rust/Makefile`.
