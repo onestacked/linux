@@ -5,11 +5,11 @@
 use crate::ffi::c_void;
 use core::{
     cell::UnsafeCell,
-    marker::{PhantomData, PhantomPinned},
+    marker::PhantomData,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
 };
-use pin_init::{PinInit, Wrapper, Zeroable};
+use pin_init::{cast_pin_init, PinInit, Wrapper, Zeroable};
 
 pub use crate::sync::aref::{ARef, AlwaysRefCounted};
 
@@ -324,8 +324,8 @@ impl<T, F: FnOnce(T)> Drop for ScopeGuard<T, F> {
 /// ```
 #[repr(transparent)]
 pub struct Opaque<T> {
-    value: UnsafeCell<MaybeUninit<T>>,
-    _pin: PhantomPinned,
+    // `UnsafePinned` includes `UnsafeCell` semantics.
+    value: UnsafePinned<MaybeUninit<T>>,
 }
 
 // SAFETY: `Opaque<T>` allows the inner value to be any bit pattern, including all zeros.
@@ -335,24 +335,21 @@ impl<T> Opaque<T> {
     /// Creates a new opaque value.
     pub const fn new(value: T) -> Self {
         Self {
-            value: UnsafeCell::new(MaybeUninit::new(value)),
-            _pin: PhantomPinned,
+            value: UnsafePinned::new(MaybeUninit::new(value)),
         }
     }
 
     /// Creates an uninitialised value.
     pub const fn uninit() -> Self {
         Self {
-            value: UnsafeCell::new(MaybeUninit::uninit()),
-            _pin: PhantomPinned,
+            value: UnsafePinned::new(MaybeUninit::uninit()),
         }
     }
 
     /// Creates a new zeroed opaque value.
     pub const fn zeroed() -> Self {
         Self {
-            value: UnsafeCell::new(MaybeUninit::zeroed()),
-            _pin: PhantomPinned,
+            value: UnsafePinned::new(MaybeUninit::zeroed()),
         }
     }
 
@@ -395,7 +392,7 @@ impl<T> Opaque<T> {
 
     /// Returns a raw pointer to the opaque data.
     pub const fn get(&self) -> *mut T {
-        UnsafeCell::get(&self.value).cast::<T>()
+        self.value.get().cast::<T>()
     }
 
     /// Gets the value behind `this`.
@@ -403,7 +400,7 @@ impl<T> Opaque<T> {
     /// This function is useful to get access to the value without creating intermediate
     /// references.
     pub const fn cast_into(this: *const Self) -> *mut T {
-        UnsafeCell::raw_get(this.cast::<UnsafeCell<MaybeUninit<T>>>()).cast::<T>()
+        this.cast::<T>().cast_mut()
     }
 
     /// The opposite operation of [`Opaque::cast_into`].
@@ -415,13 +412,10 @@ impl<T> Opaque<T> {
 impl<T> Wrapper<T> for Opaque<T> {
     /// Create an opaque pin-initializer from the given pin-initializer.
     fn pin_init<E>(slot: impl PinInit<T, E>) -> impl PinInit<Self, E> {
-        Self::try_ffi_init(|ptr: *mut T| {
-            // SAFETY:
-            //   - `ptr` is a valid pointer to uninitialized memory,
-            //   - `slot` is not accessed on error,
-            //   - `slot` is pinned in memory.
-            unsafe { PinInit::<T, E>::__pinned_init(slot, ptr) }
-        })
+        let slot = UnsafePinned::pin_init(UnsafeCell::pin_init(MaybeUninit::pin_init(slot)));
+        // SAFETY: `Opaque<T>` is a `repr(transparent)` wrapper around
+        // `UnsafePinned<UnsafeCell<MabeUninit<T>>>` so the memory representation is compatible.
+        unsafe { cast_pin_init(slot) }
     }
 }
 
