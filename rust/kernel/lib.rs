@@ -59,6 +59,7 @@ pub mod block;
 #[doc(hidden)]
 pub mod build_assert;
 pub mod clk;
+pub mod compile_assert;
 #[cfg(CONFIG_CONFIGFS_FS)]
 pub mod configfs;
 pub mod cpu;
