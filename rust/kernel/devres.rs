@@ -30,8 +30,8 @@ use crate::{
     },
     types::{
         ForeignOwnable,
-        Opaque,
-        ScopeGuard, //
+        ScopeGuard,
+        UnsafePinned, //
     },
 };
 
@@ -143,12 +143,8 @@ pub struct Devres<T: Send> {
     /// function. However, the C API uses the address as a key.
     callback: unsafe extern "C" fn(*mut c_void),
     /// Contains all the fields shared with [`Self::callback`].
-    // TODO: Replace with `UnsafePinned`, once available.
-    //
-    // Subsequently, the `drop_in_place()` in `Devres::drop` and `Devres::new` as well as the
-    // explicit `Send` and `Sync' impls can be removed.
     #[pin]
-    inner: Opaque<Inner<T>>,
+    inner: UnsafePinned<Inner<T>>,
     _add_action: (),
 }
 
@@ -169,7 +165,7 @@ impl<T: Send> Devres<T> {
             dev: dev.into(),
             callback: Self::devres_callback,
             // INVARIANT: `inner` is properly initialized.
-            inner <- Opaque::pin_init(try_pin_init!(Inner {
+            inner <- UnsafePinned::pin_init(try_pin_init!(Inner {
                     devm <- Completion::new(),
                     revoke <- Completion::new(),
                     data <- Revocable::new(data),
@@ -189,12 +185,6 @@ impl<T: Send> Devres<T> {
                 //    live at least as long as the returned `impl PinInit<Self, Error>`.
                 to_result(unsafe {
                     bindings::devm_add_action(dev.as_raw(), Some(*callback), inner.cast())
-                }).inspect_err(|_| {
-                    let inner = Opaque::cast_into(inner);
-
-                    // SAFETY: `inner` is a valid pointer to an `Inner<T>` and valid for both reads
-                    // and writes.
-                    unsafe { core::ptr::drop_in_place(inner) };
                 })?;
             },
         })
@@ -301,12 +291,6 @@ impl<T: Send> Devres<T> {
     }
 }
 
-// SAFETY: `Devres` can be send to any task, if `T: Send`.
-unsafe impl<T: Send> Send for Devres<T> {}
-
-// SAFETY: `Devres` can be shared with any task, if `T: Sync`.
-unsafe impl<T: Send + Sync> Sync for Devres<T> {}
-
 #[pinned_drop]
 impl<T: Send> PinnedDrop for Devres<T> {
     fn drop(self: Pin<&mut Self>) {
@@ -327,11 +311,6 @@ impl<T: Send> PinnedDrop for Devres<T> {
             // using this object.
             self.inner().devm.wait_for_completion();
         }
-
-        // INVARIANT: At this point it is guaranteed that `inner` can't be accessed any more.
-        //
-        // SAFETY: `inner` is valid for dropping.
-        unsafe { core::ptr::drop_in_place(self.inner.get()) };
     }
 }
 
